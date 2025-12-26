@@ -21,6 +21,18 @@ openai_client = None
 # Store conversation IDs per user (Telegram user ID -> OpenAI conversation ID)
 user_conversations: Dict[int, str] = {}
 
+# Allowed user ID (set via ALLOWED_USER_ID env var)
+ALLOWED_USER_ID = os.getenv("ALLOWED_USER_ID")
+if ALLOWED_USER_ID:
+    ALLOWED_USER_ID = int(ALLOWED_USER_ID)
+
+
+def is_user_allowed(user_id: int) -> bool:
+    """Check if user is allowed to use the bot."""
+    if ALLOWED_USER_ID is None:
+        return True  # If not set, allow everyone (for development)
+    return user_id == ALLOWED_USER_ID
+
 SYSTEM_INSTRUCTION = """You are a helpful AI assistant for Telegram.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
@@ -110,6 +122,12 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages by sending them to ChatGPT."""
+    user_id = update.effective_user.id
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized access attempt from user {user_id}")
+        await update.message.reply_text("Sorry, this bot is not available.")
+        return
+    
     user_message = update.message.text
     logger.info(f"Received message from {update.effective_user.first_name}: {user_message}")
     await send_to_openai(update, context, user_message)
@@ -117,6 +135,12 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
+    user_id = update.effective_user.id
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized access attempt from user {user_id}")
+        await update.message.reply_text("Sorry, this bot is not available.")
+        return
+    
     await update.message.reply_text(
         "Hello! I'm your AI assistant. Send me a message and I'll respond.\n\n"
         "<b>Commands:</b>\n"
@@ -129,6 +153,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def newchat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /newchat command - clears conversation history."""
     user_id = update.effective_user.id
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized access attempt from user {user_id}")
+        await update.message.reply_text("Sorry, this bot is not available.")
+        return
     if user_id in user_conversations:
         del user_conversations[user_id]
         await update.message.reply_text("Conversation cleared! Starting fresh.")
@@ -139,6 +167,12 @@ async def newchat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - performs web search."""
+    user_id = update.effective_user.id
+    if not is_user_allowed(user_id):
+        logger.warning(f"Unauthorized access attempt from user {user_id}")
+        await update.message.reply_text("Sorry, this bot is not available.")
+        return
+    
     query = " ".join(context.args) if context.args else None
     
     if not query:
@@ -167,6 +201,11 @@ def main():
 
     openai_client = OpenAI(api_key=api_key)
     logger.info("OpenAI client initialized")
+    
+    if ALLOWED_USER_ID:
+        logger.info(f"Access restricted to user ID: {ALLOWED_USER_ID}")
+    else:
+        logger.warning("ALLOWED_USER_ID not set - bot is open to everyone!")
 
     logger.info("Creating bot application...")
     application = Application.builder().token(token).build()
