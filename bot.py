@@ -42,16 +42,37 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received message from {user_name}: {user_message}")
 
     try:
+        system_instruction = """Format your response using Telegram HTML tags. Available tags:
+- <b>bold</b> or <strong>bold</strong>
+- <i>italic</i> or <em>italic</em>
+- <u>underline</u> or <ins>underline</ins>
+- <s>strikethrough</s>, <strike>strikethrough</strike>, or <del>strikethrough</del>
+- <span class="tg-spoiler">spoiler</span> or <tg-spoiler>spoiler</tg-spoiler>
+- <code>inline code</code>
+- <pre>code block</pre> or <pre><code class="language-name">code block</code></pre>
+- <blockquote>quotation</blockquote>
+- <a href="URL">link</a>
+Tags can be nested. Do not use markdown formatting."""
+        
+        prompt = f"{system_instruction}\n\n{user_message}"
+        
         response = openai_client.responses.create(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            input=user_message,
+            input=prompt,
             max_output_tokens=500
         )
         
-        await update.message.reply_text(
-            response.output_text,
-            parse_mode=ParseMode.MARKDOWN_V2
-        )
+        response_text = response.output_text
+        
+        try:
+            await update.message.reply_text(
+                response_text,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as parse_error:
+            logger.warning(f"Failed to parse as HTML, sending as plain text: {parse_error}")
+            await update.message.reply_text(response_text)
+        
         logger.info(f"Sent response to {user_name}")
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
