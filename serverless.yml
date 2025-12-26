@@ -1,0 +1,48 @@
+service: telegram-chatbot
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: ${opt:region, 'us-east-1'}
+  timeout: 30
+  memorySize: 512
+  environment:
+    TELEGRAM_BOT_TOKEN: ${env:TELEGRAM_BOT_TOKEN}
+    OPENAI_API_KEY: ${env:OPENAI_API_KEY}
+    OPENAI_MODEL: ${env:OPENAI_MODEL, 'gpt-4o-mini'}
+    TAVILY_API_KEY: ${env:TAVILY_API_KEY, ''}
+  iam:
+    role:
+      statements:
+        # Optional: If using DynamoDB for persistence
+        # - Effect: Allow
+        #   Action:
+        #     - dynamodb:GetItem
+        #     - dynamodb:PutItem
+        #     - dynamodb:DeleteItem
+        #   Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.DYNAMODB_TABLE_NAME}"
+
+functions:
+  webhook:
+    handler: lambda_handler.handler
+    events:
+      - http:
+          path: webhook
+          method: post
+          cors: true
+      - http:
+          path: health
+          method: get
+          cors: true
+
+plugins:
+  - serverless-python-requirements
+
+custom:
+  pythonRequirements:
+    dockerizePip: non-linux
+    zip: true
+    slim: true
+
