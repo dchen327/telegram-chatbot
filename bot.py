@@ -25,7 +25,8 @@ SYSTEM_INSTRUCTION = """You are a helpful AI assistant for Telegram.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
 1. NEVER include URLs, links, or images. Not even from search results. Not even in parentheses. No exceptions.
-2. NEVER use markdown syntax. No **, no *, no `, no #, no [text](url), no ![image](url).
+2. NEVER use markdown syntax. No **, no *, no `, no #, no ##, no [text](url), no ![image](url).
+3. Always summarize information in your own words. Do not copy raw output from search results.
 
 FORMAT RULES:
 - Use ONLY HTML tags for formatting: <b>bold</b>, <i>italic</i>, <code>code</code>
@@ -79,21 +80,20 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
         conversation_id = get_or_create_conversation(user_id)
         
         api_params = {
-            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            "model": os.getenv("OPENAI_MODEL", "gpt-5-nano"),
             "input": message,
-            "max_output_tokens": 500,
-            "conversation": conversation_id
+            "max_output_tokens": 4000,
+            "conversation": conversation_id,
+            "reasoning": {"effort": "low"}
         }
         
         if use_web_search:
             api_params["tools"] = [{"type": "web_search"}]
-            # Override instructions for web search to enforce formatting
-            api_params["instructions"] = """CRITICAL: Summarize search results in your own words. 
-DO NOT copy raw search output. NO URLs, NO links, NO markdown (**, *, #, []()), NO images.
-Use only HTML tags: <b>bold</b>, <i>italic</i>. Plain text otherwise."""
         
         response = openai_client.responses.create(**api_params)
         response_text = response.output_text
+        if not response_text:
+            logger.warning(f"Empty response. Full response: {response}")
         
         try:
             await update.message.reply_text(response_text, parse_mode=ParseMode.HTML)
