@@ -1,14 +1,9 @@
-"""
-Step 3: Conversation History with Stateful Context
-This bot maintains conversation history per user using Responses API with store:true.
-"""
 import os
-import re
 import logging
 from typing import Dict
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from openai import OpenAI
 
@@ -26,18 +21,6 @@ openai_client = None
 # Store conversation IDs per user (Telegram user ID -> OpenAI conversation ID)
 user_conversations: Dict[int, str] = {}
 
-
-def convert_markdown_to_html(text: str) -> str:
-    """Convert common markdown patterns to HTML for Telegram."""
-    # Convert **bold** to <b>bold</b>
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    # Convert *italic* (not already in bold) to <i>italic</i>
-    text = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', r'<i>\1</i>', text)
-    # Convert `code` to <code>code</code>
-    text = re.sub(r'`([^`]+?)`', r'<code>\1</code>', text)
-    return text
-
-
 async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages by sending them to ChatGPT with stateful context."""
     user_message = update.message.text
@@ -45,6 +28,9 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = update.effective_user.first_name
 
     logger.info(f"Received message from {user_name}: {user_message}")
+
+    # Show typing indicator while processing
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
 
     try:
         system_instruction = """You are a helpful AI assistant for Telegram. CRITICAL FORMATTING RULES:
