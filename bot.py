@@ -1,10 +1,11 @@
 """
-Step 2: OpenAI Integration
-This bot connects users to ChatGPT API.
+Step 3: Conversation History with Stateful Context
+This bot maintains conversation history per user using Responses API with store:true.
 """
 import os
 import re
 import logging
+from typing import Dict
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ParseMode
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 openai_client = None
 
+# Store conversation IDs per user (Telegram user ID -> OpenAI conversation ID)
+user_conversations: Dict[int, str] = {}
+
 
 def convert_markdown_to_html(text: str) -> str:
     """Convert common markdown patterns to HTML for Telegram."""
@@ -35,8 +39,9 @@ def convert_markdown_to_html(text: str) -> str:
 
 
 async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages by sending them to ChatGPT."""
+    """Handle text messages by sending them to ChatGPT with stateful context."""
     user_message = update.message.text
+    user_id = update.effective_user.id
     user_name = update.effective_user.first_name
 
     logger.info(f"Received message from {user_name}: {user_message}")
@@ -54,13 +59,29 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - <a href="URL">link</a>
 Tags can be nested. Do not use markdown formatting."""
         
-        prompt = f"{system_instruction}\n\n{user_message}"
+        # Get or create conversation ID for this user
+        conversation_id = user_conversations.get(user_id)
         
-        response = openai_client.responses.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            input=prompt,
-            max_output_tokens=500
-        )
+        # If no conversation exists, create one explicitly
+        if conversation_id is None:
+            logger.info(f"Creating new conversation for user {user_id}")
+            conversation = openai_client.conversations.create()
+            conversation_id = conversation.id
+            user_conversations[user_id] = conversation_id
+            logger.info(f"Created conversation_id {conversation_id} for user {user_id}")
+        else:
+            logger.info(f"Using existing conversation_id {conversation_id} for user {user_id}")
+        
+        # Prepare API parameters with the conversation ID
+        api_params = {
+            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            "input": user_message,
+            "instructions": system_instruction,
+            "max_output_tokens": 500,
+            "conversation": conversation_id
+        }
+        
+        response = openai_client.responses.create(**api_params)
         
         response_text = response.output_text
         
