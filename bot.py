@@ -47,17 +47,28 @@ async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received message from {user_name}: {user_message}")
 
     try:
-        system_instruction = """Format your response using Telegram HTML tags. Available tags:
-- <b>bold</b> or <strong>bold</strong>
-- <i>italic</i> or <em>italic</em>
-- <u>underline</u> or <ins>underline</ins>
-- <s>strikethrough</s>, <strike>strikethrough</strike>, or <del>strikethrough</del>
-- <span class="tg-spoiler">spoiler</span> or <tg-spoiler>spoiler</tg-spoiler>
-- <code>inline code</code>
-- <pre>code block</pre> or <pre><code class="language-name">code block</code></pre>
-- <blockquote>quotation</blockquote>
-- <a href="URL">link</a>
-Tags can be nested. Do not use markdown formatting."""
+        system_instruction = """You are a helpful AI assistant for Telegram. CRITICAL FORMATTING RULES:
+
+NEVER use markdown. NO asterisks (**text**), NO underscores (_text_), NO backticks (`code`).
+
+ONLY use HTML tags: <b>bold</b>, <i>italic</i>, <code>code</code>
+
+CORRECT list formatting:
+1. <b>Vegetables</b>:
+   - Daikon radish for sweetness.
+   - Bok choy for crunch.
+
+2. <b>Spices</b>:
+   - Five-spice powder for warmth.
+
+WRONG list formatting (never do this):
+1. **Vegetables**:
+   - Daikon radish for sweetness.
+
+Other rules:
+- Be concise but thorough
+- Do NOT include images or URLs
+- Provide complete, helpful answers"""
         
         # Get or create conversation ID for this user
         conversation_id = user_conversations.get(user_id)
