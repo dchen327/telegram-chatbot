@@ -27,6 +27,7 @@ ABSOLUTE RULES (NEVER BREAK THESE):
 1. NEVER include URLs, links, or images. Not even from search results. Not even in parentheses. No exceptions.
 2. NEVER use markdown syntax. No **, no *, no `, no #, no ##, no [text](url), no ![image](url).
 3. Always summarize information in your own words. Do not copy raw output from search results.
+4. NEVER ask for clarification or confirmation. Proceed immediately with the requested action and provide results.
 
 FORMAT RULES:
 - Use ONLY HTML tags for formatting: <b>bold</b>, <i>italic</i>, <code>code</code>
@@ -82,7 +83,7 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
         api_params = {
             "model": os.getenv("OPENAI_MODEL", "gpt-5-nano"),
             "input": message,
-            "max_output_tokens": 4000,
+            "max_output_tokens": 5000,
             "conversation": conversation_id,
             "reasoning": {"effort": "low"}
         }
@@ -145,7 +146,9 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     logger.info(f"Search request from {update.effective_user.first_name}: {query}")
-    await send_to_openai(update, context, query, use_web_search=True)
+    # Add instructions: proceed immediately without asking for confirmation
+    search_prompt = f"{query}\n\n(Do NOT ask for clarification or confirmation. Proceed immediately with the search and provide results. Do NOT include any URLs or links in your response.)"
+    await send_to_openai(update, context, search_prompt, use_web_search=True)
 
 
 def main():
