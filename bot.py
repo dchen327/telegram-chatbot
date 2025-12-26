@@ -4,7 +4,7 @@ from typing import Dict
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
 
 load_dotenv()
@@ -21,78 +21,82 @@ openai_client = None
 # Store conversation IDs per user (Telegram user ID -> OpenAI conversation ID)
 user_conversations: Dict[int, str] = {}
 
-async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages by sending them to ChatGPT with stateful context."""
-    user_message = update.message.text
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
+SYSTEM_INSTRUCTION = """You are a helpful AI assistant for Telegram.
 
-    logger.info(f"Received message from {user_name}: {user_message}")
+ABSOLUTE RULES (NEVER BREAK THESE):
+1. NEVER include URLs, links, or images. Not even from search results. Not even in parentheses. No exceptions.
+2. NEVER use markdown syntax. No **, no *, no `, no #, no [text](url), no ![image](url).
 
-    # Show typing indicator while processing
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-
-    try:
-        system_instruction = """You are a helpful AI assistant for Telegram. CRITICAL FORMATTING RULES:
-
-NEVER use markdown. NO asterisks (**text**), NO underscores (_text_), NO backticks (`code`).
-
-ONLY use HTML tags: <b>bold</b>, <i>italic</i>, <code>code</code>
+FORMAT RULES:
+- Use ONLY HTML tags for formatting: <b>bold</b>, <i>italic</i>, <code>code</code>
+- For headers, use <b>Header Text</b> on its own line
+- For lists, use plain dashes: - item
 
 CORRECT list formatting:
 1. <b>Vegetables</b>:
    - Daikon radish for sweetness.
    - Bok choy for crunch.
 
-2. <b>Spices</b>:
-   - Five-spice powder for warmth.
-
-WRONG list formatting (never do this):
+WRONG (never do this):
 1. **Vegetables**:
-   - Daikon radish for sweetness.
+   - Daikon radish ([source](https://example.com))
 
-Other rules:
-- Be concise but thorough
-- Do NOT include images or URLs
-- Provide complete, helpful answers"""
-        
-        # Get or create conversation ID for this user
-        conversation_id = user_conversations.get(user_id)
-        
-        # If no conversation exists, create one explicitly with system instructions
-        if conversation_id is None:
-            logger.info(f"Creating new conversation for user {user_id}")
-            conversation = openai_client.conversations.create(
-                items=[
-                    {
-                        "type": "message",
-                        "role": "system",
-                        "content": system_instruction
-                    }
-                ]
-            )
-            conversation_id = conversation.id
-            user_conversations[user_id] = conversation_id
-            logger.info(f"Created conversation_id {conversation_id} for user {user_id}")
-        else:
-            logger.info(f"Using existing conversation_id {conversation_id} for user {user_id}")
+Be concise but thorough. Provide complete, helpful answers."""
+
+
+def get_or_create_conversation(user_id: int) -> str:
+    """Get existing conversation ID or create a new one for the user."""
+    conversation_id = user_conversations.get(user_id)
+    
+    if conversation_id is None:
+        logger.info(f"Creating new conversation for user {user_id}")
+        conversation = openai_client.conversations.create(
+            items=[
+                {
+                    "type": "message",
+                    "role": "system",
+                    "content": SYSTEM_INSTRUCTION
+                }
+            ]
+        )
+        conversation_id = conversation.id
+        user_conversations[user_id] = conversation_id
+        logger.info(f"Created conversation_id {conversation_id} for user {user_id}")
+    
+    return conversation_id
+
+
+async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                         message: str, use_web_search: bool = False):
+    """Send message to OpenAI and reply with the response."""
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+    
+    # Show typing indicator
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+    
+    try:
+        conversation_id = get_or_create_conversation(user_id)
         
         api_params = {
             "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            "input": user_message,
+            "input": message,
             "max_output_tokens": 500,
             "conversation": conversation_id
         }
         
-        response = openai_client.responses.create(**api_params)
+        if use_web_search:
+            api_params["tools"] = [{"type": "web_search"}]
+            # Override instructions for web search to enforce formatting
+            api_params["instructions"] = """CRITICAL: Summarize search results in your own words. 
+DO NOT copy raw search output. NO URLs, NO links, NO markdown (**, *, #, []()), NO images.
+Use only HTML tags: <b>bold</b>, <i>italic</i>. Plain text otherwise."""
         
+        response = openai_client.responses.create(**api_params)
         response_text = response.output_text
         
         try:
-            await update.message.reply_text(
-                response_text,
-                parse_mode=ParseMode.HTML
-            )
+            await update.message.reply_text(response_text, parse_mode=ParseMode.HTML)
         except Exception as parse_error:
             logger.warning(f"Failed to parse as HTML, sending as plain text: {parse_error}")
             await update.message.reply_text(response_text)
@@ -101,6 +105,47 @@ Other rules:
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
         await update.message.reply_text("Sorry, I encountered an error. Please try again.")
+
+
+async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages by sending them to ChatGPT."""
+    user_message = update.message.text
+    logger.info(f"Received message from {update.effective_user.first_name}: {user_message}")
+    await send_to_openai(update, context, user_message)
+
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command."""
+    await update.message.reply_text(
+        "Hello! I'm your AI assistant. Send me a message and I'll respond.\n\n"
+        "<b>Commands:</b>\n"
+        "/newchat - Start a new conversation\n"
+        "/search [query] - Search the web",
+        parse_mode=ParseMode.HTML
+    )
+
+
+async def newchat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /newchat command - clears conversation history."""
+    user_id = update.effective_user.id
+    if user_id in user_conversations:
+        del user_conversations[user_id]
+        await update.message.reply_text("Conversation cleared! Starting fresh.")
+        logger.info(f"Cleared conversation for user {user_id}")
+    else:
+        await update.message.reply_text("No conversation to clear. Send me a message to start!")
+
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /search command - performs web search."""
+    query = " ".join(context.args) if context.args else None
+    
+    if not query:
+        await update.message.reply_text("Usage: /search [your query]\nExample: /search weather in NYC")
+        return
+    
+    logger.info(f"Search request from {update.effective_user.first_name}: {query}")
+    await send_to_openai(update, context, query, use_web_search=True)
 
 
 def main():
@@ -123,6 +168,12 @@ def main():
     logger.info("Creating bot application...")
     application = Application.builder().token(token).build()
 
+    # Command handlers
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("newchat", newchat_command))
+    application.add_handler(CommandHandler("search", search_command))
+    
+    # Message handler (for non-command messages)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, chat_message))
 
