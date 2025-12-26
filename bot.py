@@ -185,19 +185,17 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_to_openai(update, context, search_prompt, use_web_search=True)
 
 
-def main():
-    """Start the bot"""
+def create_application():
+    """Create and configure the bot application."""
     global openai_client
     
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
-        logger.error("TELEGRAM_BOT_TOKEN not found in environment variables!")
-        return
+        raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables!")
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        logger.error("OPENAI_API_KEY not found in environment variables!")
-        return
+        raise ValueError("OPENAI_API_KEY not found in environment variables!")
 
     openai_client = OpenAI(api_key=api_key)
     logger.info("OpenAI client initialized")
@@ -219,9 +217,14 @@ def main():
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, chat_message))
 
+    return application
+
+
+def main():
+    """Start the bot in polling mode"""
+    application = create_application()
     logger.info("Starting bot in polling mode...")
     logger.info("Press Ctrl+C to stop")
-
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
