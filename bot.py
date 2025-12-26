@@ -62,21 +62,27 @@ Tags can be nested. Do not use markdown formatting."""
         # Get or create conversation ID for this user
         conversation_id = user_conversations.get(user_id)
         
-        # If no conversation exists, create one explicitly
+        # If no conversation exists, create one explicitly with system instructions
         if conversation_id is None:
             logger.info(f"Creating new conversation for user {user_id}")
-            conversation = openai_client.conversations.create()
+            conversation = openai_client.conversations.create(
+                items=[
+                    {
+                        "type": "message",
+                        "role": "system",
+                        "content": system_instruction
+                    }
+                ]
+            )
             conversation_id = conversation.id
             user_conversations[user_id] = conversation_id
             logger.info(f"Created conversation_id {conversation_id} for user {user_id}")
         else:
             logger.info(f"Using existing conversation_id {conversation_id} for user {user_id}")
         
-        # Prepare API parameters with the conversation ID
         api_params = {
             "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             "input": user_message,
-            "instructions": system_instruction,
             "max_output_tokens": 500,
             "conversation": conversation_id
         }
