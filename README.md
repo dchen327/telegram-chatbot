@@ -7,8 +7,14 @@ A Telegram bot powered by OpenAI's GPT-5-nano with conversation history and web 
 - **Chat with AI**: Send messages and get responses from GPT-5-nano
 - **Conversation History**: Maintains context across messages per user
 - **Web Search**: Use `/search` command to search the web
-- **HTML Formatting**: Responses use Telegram HTML tags for better readability
+- **HTML Formatting**: Responses use Telegram HTML tags (`<b>`, `<i>`, `<code>`) for better readability
+- **Message Splitting**: Long responses are automatically split into multiple messages (Telegram has a 4096 character limit)
+- **Flight-Optimized**: Responses are optimized for in-flight use:
+  - URLs and links are automatically removed
+  - Source names are preserved (e.g., "nytimes", "reddit") without full URLs
+  - No images or media links
 - **Access Control**: Restrict bot access to specific users
+- **Auto-Reload**: Development server automatically reloads on code changes
 - **Commands**:
   - `/start` - Show available commands
   - `/newchat` - Clear conversation history and start fresh
@@ -94,7 +100,7 @@ The script automatically detects your ngrok URL and sets the webhook for you!
 
 **Make code changes:**
 - Edit code in `bot.py` or other files
-- Restart the webhook server (Ctrl+C and run `python dev_webhook.py` again)
+- The server automatically reloads on file changes (no restart needed!)
 - Test on Telegram immediately
 
 **Deploy to production:**
