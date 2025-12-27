@@ -82,10 +82,15 @@ def main():
     
     # Import and run uvicorn
     import uvicorn
-    from lambda_handler import app
     
     try:
-        uvicorn.run(app, host="0.0.0.0", port=NGROK_PORT)
+        uvicorn.run(
+            "lambda_handler:app",
+            host="0.0.0.0",
+            port=NGROK_PORT,
+            reload=True,
+            log_level="info"
+        )
     except KeyboardInterrupt:
         print("\n🛑 Stopping server...")
         # Optionally remove webhook

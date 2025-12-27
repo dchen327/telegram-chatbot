@@ -1,5 +1,7 @@
 import os
+import sys
 import logging
+import re
 from typing import Dict
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
@@ -14,7 +16,8 @@ if not os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -46,11 +49,29 @@ def require_auth(func):
         await func(update, context)
     return wrapper
 
+
+def clean_response(text: str) -> str:
+    """Minimal processing - remove markdown links and URLs, keep source names."""
+    # Remove markdown links [text](url) - keep just the text (source name)
+    markdown_links = re.findall(r'\[([^\]]+)\]\([^\)]+\)', text)
+    if markdown_links:
+        logger.info(f"Removed {len(markdown_links)} markdown link(s): {markdown_links}")
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    
+    # Remove raw URLs (http://, https://, www.) - but preserve HTML tags
+    urls = re.findall(r'https?://[^\s<\)]+|www\.[^\s<\)]+', text)
+    if urls:
+        logger.info(f"Removed {len(urls)} URL(s): {urls[:3]}{'...' if len(urls) > 3 else ''}")
+    text = re.sub(r'https?://[^\s<\)]+', '', text)
+    text = re.sub(r'www\.[^\s<\)]+', '', text)
+    
+    return text.strip()
+
 SYSTEM_INSTRUCTION = """You are a helpful AI assistant for Telegram.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
-1. NEVER include URLs, links, or images. Not even from search results. Not even in parentheses. No exceptions.
-2. NEVER use markdown syntax. No **, no *, no `, no #, no ##, no [text](url), no ![image](url).
+1. NEVER include URLs, links, or images. You may mention source names (e.g., "nytimes", "reddit", "wikipedia") but NEVER include the actual URL or link.
+2. NEVER use markdown syntax. No **, no *, no `, no #, no ##, no [text](url), no ![image](url). No markdown at all.
 3. Always summarize information in your own words. Do not copy raw output from search results.
 4. NEVER ask for clarification or confirmation. Proceed immediately with the requested action and provide results.
 
@@ -58,6 +79,8 @@ FORMAT RULES:
 - Use ONLY HTML tags for formatting: <b>bold</b>, <i>italic</i>, <code>code</code>
 - For headers, use <b>Header Text</b> on its own line
 - For lists, use plain dashes: - item
+- Always close tags properly: <b>text</b> not <b>text
+- Use plain newlines for line breaks (no HTML tags for breaks)
 
 CORRECT list formatting:
 1. <b>Vegetables</b>:
@@ -67,6 +90,14 @@ CORRECT list formatting:
 WRONG (never do this):
 1. **Vegetables**:
    - Daikon radish ([source](https://example.com))
+
+CORRECT source attribution:
+- According to nytimes, the recipe calls for...
+- As reported by reddit users...
+
+WRONG source attribution:
+- According to [nytimes](https://nytimes.com/article), the recipe...
+- Source: https://example.com
 
 Be concise but thorough. Provide complete, helpful answers."""
 
@@ -115,10 +146,17 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
         response = openai_client.responses.create(**api_params)
         response_text = response.output_text
         
+        # Clean URLs and markdown from response
+        response_text = clean_response(response_text)
+        
+        # Try HTML first, fall back to plain text if it fails
         try:
             await update.message.reply_text(response_text, parse_mode=ParseMode.HTML)
-        except Exception:
-            await update.message.reply_text(response_text)
+        except Exception as e:
+            logger.warning(f"HTML parsing failed, falling back to plain text: {e}")
+            # Strip all HTML tags for plain text fallback
+            plain_text = re.sub(r'<[^>]+>', '', response_text)
+            await update.message.reply_text(plain_text)
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
         await update.message.reply_text("Sorry, I encountered an error. Please try again.")
@@ -159,9 +197,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args) if context.args else None
     
     if not query:
+        await update.message.reply_text("Usage: /search [your query]\nExample: /search weather in NYC")
         return
     
-    search_prompt = f"{query}\n\n(Do NOT ask for clarification or confirmation. Proceed immediately with the search and provide results. Do NOT include any URLs or links in your response.)"
+    search_prompt = f"{query}\n\nIMPORTANT: Use HTML formatting (<b>, <i>, <code>) for structure. You may mention source names (e.g., 'nytimes', 'reddit') but NEVER include URLs, links, or markdown syntax. Rewrite all information in your own words using HTML tags for formatting."
     await send_to_openai(update, context, search_prompt, use_web_search=True)
 
 
