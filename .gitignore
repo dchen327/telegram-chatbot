@@ -18,3 +18,10 @@ env/
 .idea/
 .vscode/
 
+# Serverless Framework
+.serverless/
+.requirements.zip
+
+# Node.js
+node_modules/
+package-lock.json

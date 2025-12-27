@@ -7,7 +7,10 @@ from telegram.constants import ChatAction, ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
 
-load_dotenv()
+# Only load .env file in local development (not in Lambda)
+# Lambda uses environment variables from serverless.yml
+if not os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+    load_dotenv()
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -218,15 +221,3 @@ def create_application():
         filters.TEXT & ~filters.COMMAND, chat_message))
 
     return application
-
-
-def main():
-    """Start the bot in polling mode"""
-    application = create_application()
-    logger.info("Starting bot in polling mode...")
-    logger.info("Press Ctrl+C to stop")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()

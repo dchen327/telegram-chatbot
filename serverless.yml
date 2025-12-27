@@ -1,12 +1,14 @@
+# "org" ensures this Service is used with the correct Serverless Framework Access Key.
+org: dchen327
+# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
+app: telegram-chatbot
 service: telegram-chatbot
-
-frameworkVersion: '3'
 
 provider:
   name: aws
-  runtime: python3.11
+  runtime: python3.10
   region: ${opt:region, 'us-east-1'}
-  timeout: 30
+  timeout: 29
   memorySize: 512
   environment:
     TELEGRAM_BOT_TOKEN: ${env:TELEGRAM_BOT_TOKEN}
@@ -37,12 +39,8 @@ functions:
           method: get
           cors: true
 
-plugins:
-  - serverless-python-requirements
-
 custom:
   pythonRequirements:
     dockerizePip: non-linux
-    zip: true
-    slim: true
-
+    zip: false
+    layer: false
