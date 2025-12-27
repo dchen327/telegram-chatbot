@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import re
-from typing import Dict
+from typing import Dict, List
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
 from telegram.constants import ChatAction, ParseMode
@@ -48,6 +48,46 @@ def require_auth(func):
             return
         await func(update, context)
     return wrapper
+
+
+def split_message(text: str, max_length: int = 4096) -> List[str]:
+    """Split a long message into chunks that fit within Telegram's limit."""
+    if len(text) <= max_length:
+        return [text]
+    
+    chunks = []
+    current_chunk = ""
+    
+    for line in text.split('\n'):
+        # If line itself is too long, split by words
+        if len(line) > max_length:
+            # Save current chunk if exists
+            if current_chunk:
+                chunks.append(current_chunk)
+                current_chunk = ""
+            
+            # Split long line by words
+            for word in line.split(' '):
+                if len(current_chunk) + len(word) + 1 > max_length:
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    current_chunk = word
+                else:
+                    current_chunk = f"{current_chunk} {word}".strip()
+        else:
+            # Check if adding this line would exceed limit
+            separator = '\n' if current_chunk else ''
+            if len(current_chunk) + len(separator) + len(line) > max_length:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = line
+            else:
+                current_chunk = f"{current_chunk}{separator}{line}".strip()
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return chunks
 
 
 def clean_response(text: str) -> str:
@@ -149,14 +189,25 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Clean URLs and markdown from response
         response_text = clean_response(response_text)
         
-        # Try HTML first, fall back to plain text if it fails
-        try:
-            await update.message.reply_text(response_text, parse_mode=ParseMode.HTML)
-        except Exception as e:
-            logger.warning(f"HTML parsing failed, falling back to plain text: {e}")
-            # Strip all HTML tags for plain text fallback
-            plain_text = re.sub(r'<[^>]+>', '', response_text)
-            await update.message.reply_text(plain_text)
+        # Split message if too long (Telegram limit is 4096 characters)
+        chunks = split_message(response_text)
+        
+        # Send each chunk
+        for i, chunk in enumerate(chunks):
+            # Try HTML first, fall back to plain text if it fails
+            try:
+                await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.warning(f"HTML parsing failed, falling back to plain text: {e}")
+                # Strip all HTML tags for plain text fallback
+                plain_text = re.sub(r'<[^>]+>', '', chunk)
+                try:
+                    await update.message.reply_text(plain_text)
+                except Exception as e2:
+                    logger.error(f"Failed to send message chunk: {e2}")
+                    # Last resort: send error message
+                    if i == 0:  # Only send error on first chunk to avoid spam
+                        await update.message.reply_text("Response too long to send. Please try a more specific query.")
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
         await update.message.reply_text("Sorry, I encountered an error. Please try again.")
