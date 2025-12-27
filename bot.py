@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Dict
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import OpenAI
@@ -210,6 +210,16 @@ def create_application():
 
     logger.info("Creating bot application...")
     application = Application.builder().token(token).build()
+
+    # Set bot commands (shows up when user types "/")
+    async def post_init(app: Application) -> None:
+        await app.bot.set_my_commands([
+            BotCommand("start", "Show welcome message and commands"),
+            BotCommand("newchat", "Start a new conversation"),
+            BotCommand("search", "Search the web for information")
+        ])
+    
+    application.post_init = post_init
 
     # Command handlers
     application.add_handler(CommandHandler("start", start_command))

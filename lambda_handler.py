@@ -84,40 +84,7 @@ async def webhook(request: Request):
                 content={"error": "Bot module not available"}
             )
         
-        # Parse JSON body
-        try:
-            body = await request.json()
-        except Exception as e:
-            logger.error(f"Failed to parse request body as JSON: {e}")
-            # Try to get raw body for debugging
-            try:
-                raw_body = await request.body()
-                logger.error(f"Raw body (first 500 chars): {raw_body[:500]}")
-            except:
-                pass
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Invalid JSON in request body"}
-            )
-        
-        # Log received data for debugging
-        if isinstance(body, dict):
-            logger.info(f"Received webhook update_id: {body.get('update_id', 'missing')}, keys: {list(body.keys())}")
-        else:
-            logger.error(f"Body is not a dict, type: {type(body)}, value: {body}")
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Body must be a JSON object"}
-            )
-        
-        # Validate that body has update_id (required by Update)
-        if "update_id" not in body:
-            logger.error(f"Missing update_id in body. Body keys: {list(body.keys())}, body: {str(body)[:500]}")
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Missing update_id in webhook payload"}
-            )
-        
+        body = await request.json()
         application = await get_application()
         update = Update.de_json(body, application.bot)
         await application.process_update(update)
