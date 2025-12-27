@@ -106,10 +106,8 @@ The script automatically detects your ngrok URL and sets the webhook for you!
 **Deploy to production:**
 ```bash
 # Stop local webhook (Ctrl+C in Terminal 2)
-# Deploy
+# Deploy (automatically sets webhook)
 ./deploy.sh
-# Set webhook to Lambda URL (from deployment output)
-curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<LAMBDA_URL>/webhook"
 ```
 
 **2. Quick Commands**
@@ -141,9 +139,7 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
    ./deploy.sh
    ```
    
-   The script automatically loads environment variables from `.env` file.
-
-4. **Set webhook to Lambda URL:**
-   ```bash
-   curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<LAMBDA_URL>/webhook"
-   ```
+   The script automatically:
+   - Loads environment variables from `.env` file
+   - Deploys to AWS Lambda
+   - Sets the Telegram webhook to the Lambda URL
