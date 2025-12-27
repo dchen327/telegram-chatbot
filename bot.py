@@ -36,6 +36,16 @@ def is_user_allowed(user_id: int) -> bool:
         return True  # If not set, allow everyone (for development)
     return user_id == ALLOWED_USER_ID
 
+
+def require_auth(func):
+    """Decorator to check user authorization before executing handler."""
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not is_user_allowed(update.effective_user.id):
+            await update.message.reply_text("Sorry, this bot is not available.")
+            return
+        await func(update, context)
+    return wrapper
+
 SYSTEM_INSTRUCTION = """You are a helpful AI assistant for Telegram.
 
 ABSOLUTE RULES (NEVER BREAK THESE):
@@ -66,7 +76,6 @@ def get_or_create_conversation(user_id: int) -> str:
     conversation_id = user_conversations.get(user_id)
     
     if conversation_id is None:
-        logger.info(f"Creating new conversation for user {user_id}")
         conversation = openai_client.conversations.create(
             items=[
                 {
@@ -78,7 +87,6 @@ def get_or_create_conversation(user_id: int) -> str:
         )
         conversation_id = conversation.id
         user_conversations[user_id] = conversation_id
-        logger.info(f"Created conversation_id {conversation_id} for user {user_id}")
     
     return conversation_id
 
@@ -87,9 +95,7 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
                          message: str, use_web_search: bool = False):
     """Send message to OpenAI and reply with the response."""
     user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
     
-    # Show typing indicator
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     
     try:
@@ -108,42 +114,25 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
         
         response = openai_client.responses.create(**api_params)
         response_text = response.output_text
-        if not response_text:
-            logger.warning(f"Empty response. Full response: {response}")
         
         try:
             await update.message.reply_text(response_text, parse_mode=ParseMode.HTML)
-        except Exception as parse_error:
-            logger.warning(f"Failed to parse as HTML, sending as plain text: {parse_error}")
+        except Exception:
             await update.message.reply_text(response_text)
-        
-        logger.info(f"Sent response to {user_name}")
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
         await update.message.reply_text("Sorry, I encountered an error. Please try again.")
 
 
+@require_auth
 async def chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages by sending them to ChatGPT."""
-    user_id = update.effective_user.id
-    if not is_user_allowed(user_id):
-        logger.warning(f"Unauthorized access attempt from user {user_id}")
-        await update.message.reply_text("Sorry, this bot is not available.")
-        return
-    
-    user_message = update.message.text
-    logger.info(f"Received message from {update.effective_user.first_name}: {user_message}")
-    await send_to_openai(update, context, user_message)
+    await send_to_openai(update, context, update.message.text)
 
 
+@require_auth
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command."""
-    user_id = update.effective_user.id
-    if not is_user_allowed(user_id):
-        logger.warning(f"Unauthorized access attempt from user {user_id}")
-        await update.message.reply_text("Sorry, this bot is not available.")
-        return
-    
     await update.message.reply_text(
         "Hello! I'm your AI assistant. Send me a message and I'll respond.\n\n"
         "<b>Commands:</b>\n"
@@ -153,37 +142,25 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@require_auth
 async def newchat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /newchat command - clears conversation history."""
     user_id = update.effective_user.id
-    if not is_user_allowed(user_id):
-        logger.warning(f"Unauthorized access attempt from user {user_id}")
-        await update.message.reply_text("Sorry, this bot is not available.")
-        return
     if user_id in user_conversations:
         del user_conversations[user_id]
         await update.message.reply_text("Conversation cleared! Starting fresh.")
-        logger.info(f"Cleared conversation for user {user_id}")
     else:
         await update.message.reply_text("No conversation to clear. Send me a message to start!")
 
 
+@require_auth
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /search command - performs web search."""
-    user_id = update.effective_user.id
-    if not is_user_allowed(user_id):
-        logger.warning(f"Unauthorized access attempt from user {user_id}")
-        await update.message.reply_text("Sorry, this bot is not available.")
-        return
-    
     query = " ".join(context.args) if context.args else None
     
     if not query:
-        await update.message.reply_text("Usage: /search [your query]\nExample: /search weather in NYC")
         return
     
-    logger.info(f"Search request from {update.effective_user.first_name}: {query}")
-    # Add instructions: proceed immediately without asking for confirmation
     search_prompt = f"{query}\n\n(Do NOT ask for clarification or confirmation. Proceed immediately with the search and provide results. Do NOT include any URLs or links in your response.)"
     await send_to_openai(update, context, search_prompt, use_web_search=True)
 
@@ -201,14 +178,6 @@ def create_application():
         raise ValueError("OPENAI_API_KEY not found in environment variables!")
 
     openai_client = OpenAI(api_key=api_key)
-    logger.info("OpenAI client initialized")
-    
-    if ALLOWED_USER_ID:
-        logger.info(f"Access restricted to user ID: {ALLOWED_USER_ID}")
-    else:
-        logger.warning("ALLOWED_USER_ID not set - bot is open to everyone!")
-
-    logger.info("Creating bot application...")
     application = Application.builder().token(token).build()
 
     # Set bot commands (shows up when user types "/")
