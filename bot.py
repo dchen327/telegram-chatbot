@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import re
+from functools import wraps
 from typing import Dict, List
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
@@ -42,6 +43,7 @@ def is_user_allowed(user_id: int) -> bool:
 
 def require_auth(func):
     """Decorator to check user authorization before executing handler."""
+    @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_user_allowed(update.effective_user.id):
             await update.message.reply_text("Sorry, this bot is not available.")
@@ -193,7 +195,7 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
         chunks = split_message(response_text)
         
         # Send each chunk
-        for i, chunk in enumerate(chunks):
+        for chunk in chunks:
             # Try HTML first, fall back to plain text if it fails
             try:
                 await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
@@ -201,13 +203,7 @@ async def send_to_openai(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 logger.warning(f"HTML parsing failed, falling back to plain text: {e}")
                 # Strip all HTML tags for plain text fallback
                 plain_text = re.sub(r'<[^>]+>', '', chunk)
-                try:
-                    await update.message.reply_text(plain_text)
-                except Exception as e2:
-                    logger.error(f"Failed to send message chunk: {e2}")
-                    # Last resort: send error message
-                    if i == 0:  # Only send error on first chunk to avoid spam
-                        await update.message.reply_text("Response too long to send. Please try a more specific query.")
+                await update.message.reply_text(plain_text)
     except Exception as e:
         logger.error(f"Error calling OpenAI: {e}")
         await update.message.reply_text("Sorry, I encountered an error. Please try again.")

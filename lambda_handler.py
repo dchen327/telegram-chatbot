@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+
 @app.get("/health")
 def health():
     """Health check endpoint"""
@@ -104,7 +105,7 @@ def _normalize_event(event):
                 "protocol": "HTTP/1.1"
             }
         }
-    
+
     return normalized
 
 def handler(event, context):

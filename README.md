@@ -138,7 +138,7 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
    ```bash
    ./deploy.sh
    ```
-   
+
    The script automatically:
    - Loads environment variables from `.env` file
    - Deploys to AWS Lambda
